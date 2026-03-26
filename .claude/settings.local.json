@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(cd:*)",
+      "Bash(bash:*)",
+      "Bash(docker run:*)",
+      "Bash(unzip:*)",
+      "Bash(uuidgen:*)",
+      "mcp__chrome-devtools__evaluate_script",
+      "Bash(find:*)"
+    ]
+  }
+}
