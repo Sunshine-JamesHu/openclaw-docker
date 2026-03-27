@@ -92,7 +92,7 @@ host_dir() {
     printf '%s\n' "$value"
     return 0
   fi
-  printf '/data/open-claw-%s\n' "$(project_name)"
+  printf '/data/openclaw-%s\n' "$(project_name)"
 }
 
 image_ref() {
@@ -256,17 +256,17 @@ seed_defaults() {
   [[ -f "$SCRIPT_DIR/tls/cert.pem" ]] || fail "missing bundled tls/cert.pem"
   [[ -f "$SCRIPT_DIR/tls/key.pem" ]] || fail "missing bundled tls/key.pem"
 
-  if [[ ! -f "$dir/openclaw.json" ]]; then
+  if ! sudo test -f "$dir/openclaw.json"; then
     sudo install -m 0644 "$SCRIPT_DIR/openclaw.json" "$dir/openclaw.json"
     ok "installed default config -> $dir/openclaw.json"
   fi
 
-  if [[ ! -f "$dir/tls/cert.pem" ]]; then
+  if ! sudo test -f "$dir/tls/cert.pem"; then
     sudo install -m 0644 "$SCRIPT_DIR/tls/cert.pem" "$dir/tls/cert.pem"
     ok "installed default TLS cert -> $dir/tls/cert.pem"
   fi
 
-  if [[ ! -f "$dir/tls/key.pem" ]]; then
+  if ! sudo test -f "$dir/tls/key.pem"; then
     sudo install -m 0600 "$SCRIPT_DIR/tls/key.pem" "$dir/tls/key.pem"
     ok "installed default TLS key -> $dir/tls/key.pem"
   fi
@@ -276,16 +276,37 @@ require_initialized_config() {
   local dir
   dir="$(host_dir)"
 
-  [[ -f "$dir/openclaw.json" ]] || fail "missing $dir/openclaw.json; run ./setup.sh -s install first"
-  [[ -f "$dir/tls/cert.pem" ]] || fail "missing $dir/tls/cert.pem; run ./setup.sh -s install first"
-  [[ -f "$dir/tls/key.pem" ]] || fail "missing $dir/tls/key.pem; run ./setup.sh -s install first"
+  sudo test -f "$dir/openclaw.json" || fail "missing $dir/openclaw.json; run ./setup.sh -s install first"
+  sudo test -f "$dir/tls/cert.pem" || fail "missing $dir/tls/cert.pem; run ./setup.sh -s install first"
+  sudo test -f "$dir/tls/key.pem" || fail "missing $dir/tls/key.pem; run ./setup.sh -s install first"
 }
 
 fix_permissions() {
-  local dir
+  local dir extensions_dir
   dir="$(host_dir)"
+  extensions_dir="$dir/extensions"
   info "fixing ownership under $dir ..."
-  sudo chown -R 1000:1000 "$dir" 2>/dev/null || warn "failed to chown $dir; run sudo chown -R 1000:1000 $dir"
+  sudo chown -R 0:0 "$dir" 2>/dev/null || warn "failed to chown $dir; run sudo chown -R 0:0 $dir"
+
+  if sudo test -d "$extensions_dir"; then
+    info "hardening plugin permissions under $extensions_dir ..."
+    sudo find "$extensions_dir" -type d -exec chmod 0755 {} + 2>/dev/null \
+      || warn "failed to chmod plugin directories under $extensions_dir"
+    sudo find "$extensions_dir" -type f -exec chmod go-w {} + 2>/dev/null \
+      || warn "failed to chmod plugin files under $extensions_dir"
+  fi
+
+  if sudo test -f "$dir/openclaw.json"; then
+    sudo chmod 0644 "$dir/openclaw.json" 2>/dev/null || warn "failed to chmod $dir/openclaw.json"
+  fi
+
+  if sudo test -f "$dir/tls/cert.pem"; then
+    sudo chmod 0644 "$dir/tls/cert.pem" 2>/dev/null || warn "failed to chmod $dir/tls/cert.pem"
+  fi
+
+  if sudo test -f "$dir/tls/key.pem"; then
+    sudo chmod 0600 "$dir/tls/key.pem" 2>/dev/null || warn "failed to chmod $dir/tls/key.pem"
+  fi
 }
 
 wait_healthy() {

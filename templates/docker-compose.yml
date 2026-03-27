@@ -16,7 +16,7 @@ services:
       TZ: ${OPENCLAW_TZ:-Asia/Shanghai}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
     volumes:
-      - ${OPENCLAW_HOST_DIR:-/data/open-claw}:/home/node/.openclaw
+      - ${OPENCLAW_HOST_DIR}:/home/node/.openclaw
     command:
       [
         "node",
@@ -60,7 +60,7 @@ services:
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       BROWSER: echo
     volumes:
-      - ${OPENCLAW_HOST_DIR:-/data/open-claw}:/home/node/.openclaw
+      - ${OPENCLAW_HOST_DIR}:/home/node/.openclaw
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
