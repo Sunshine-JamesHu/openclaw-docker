@@ -49,7 +49,7 @@
 - 默认模型是 `zai/glm-4.7`
 - 构建出的运行镜像默认把 Debian `apt` 源切到中科大
 - 构建出的运行镜像默认预装 `codex`、`gemini`、`claude`
-- 默认 token 是 `1111-1111`
+- 默认 token 是 `1234567890`
 - 默认时区是 `Asia/Shanghai`
 
 ## build.sh 输出要求

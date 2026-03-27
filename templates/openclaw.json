@@ -1,0 +1,32 @@
+{
+  "gateway": {
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    },
+    "tls": {
+      "enabled": true,
+      "certPath": "/home/node/.openclaw/tls/cert.pem",
+      "keyPath": "/home/node/.openclaw/tls/key.pem"
+    }
+  },
+  "env": {
+    "OPENCLAW_ALLOW_INSECURE_PRIVATE_WS": "",
+    "ZAI_API_KEY": "",
+    "OPENAI_API_KEY": "",
+    "ANTHROPIC_API_KEY": "",
+    "GEMINI_API_KEY": "",
+    "TELEGRAM_BOT_TOKEN": "",
+    "DISCORD_BOT_TOKEN": "",
+    "SLACK_BOT_TOKEN": "",
+    "CLAUDE_AI_SESSION_KEY": "",
+    "CLAUDE_WEB_SESSION_KEY": "",
+    "CLAUDE_WEB_COOKIE": ""
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "zai/glm-5-turbo"
+      }
+    }
+  }
+}

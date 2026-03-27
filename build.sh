@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="$PROJECT_DIR/dist"
 BUILD_DIR="$PROJECT_DIR/.build"
+TEMPLATE_DIR="$PROJECT_DIR/templates"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -15,6 +16,19 @@ info() { echo -e "${BLUE}[INFO]${NC}  $*"; }
 ok() { echo -e "${GREEN}[ OK ]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail() { echo -e "${RED}[FAIL]${NC}  $*" >&2; exit 1; }
+
+render_template() {
+  local src="$1" dst="$2"
+  sed \
+    -e "s|__OPENCLAW_VERSION__|${OPENCLAW_VERSION}|g" \
+    "$src" > "$dst"
+}
+
+require_templates() {
+  [[ -f "$TEMPLATE_DIR/docker-compose.yml" ]] || fail "missing template: $TEMPLATE_DIR/docker-compose.yml"
+  [[ -f "$TEMPLATE_DIR/.env" ]] || fail "missing template: $TEMPLATE_DIR/.env"
+  [[ -f "$TEMPLATE_DIR/openclaw.json" ]] || fail "missing template: $TEMPLATE_DIR/openclaw.json"
+}
 
 cleanup() {
   rm -rf "$BUILD_DIR"
@@ -76,6 +90,7 @@ command -v unzip >/dev/null 2>&1 || fail "unzip is not installed"
 command -v openssl >/dev/null 2>&1 || fail "openssl is not installed"
 
 mkdir -p "$DIST_DIR"
+require_templates
 
 if [[ ! -f "$SRC_ZIP" ]]; then
   info "downloading source archive ${RAW_TAG} ..."
@@ -141,6 +156,45 @@ RUN npm install -g @openai/codex @google/gemini-cli @anthropic-ai/claude-code &&
 EOF
 )"
 
+NPM_MIRROR_PATCH="$(cat <<'EOF'
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
+RUN npm config --location=global set registry "$NPM_CONFIG_REGISTRY" && \
+    npm install -g npm@latest --registry="$NPM_CONFIG_REGISTRY"
+EOF
+)"
+
+DOCKERFILE_TMP="$DOCKERFILE.tmp"
+awk -v patch="$NPM_MIRROR_PATCH" '
+  !done && $0 ~ /^RUN corepack enable$/ {
+    print patch
+    print ""
+    done=1
+  }
+  { print }
+  END {
+    if (!done) {
+      exit 1
+    }
+  }
+' "$DOCKERFILE" > "$DOCKERFILE_TMP" || fail "failed to patch Dockerfile with npm mirror for build stage"
+mv "$DOCKERFILE_TMP" "$DOCKERFILE"
+
+DOCKERFILE_TMP="$DOCKERFILE.tmp"
+awk -v patch="$NPM_MIRROR_PATCH" '
+  !done && $0 ~ /^RUN chown node:node \/app$/ {
+    print patch
+    print ""
+    done=1
+  }
+  { print }
+  END {
+    if (!done) {
+      exit 1
+    }
+  }
+' "$DOCKERFILE" > "$DOCKERFILE_TMP" || fail "failed to patch Dockerfile with npm mirror for runtime stage"
+mv "$DOCKERFILE_TMP" "$DOCKERFILE"
+
 DOCKERFILE_TMP="$DOCKERFILE.tmp"
 awk -v patch="$DEFAULT_AGENT_CLI_PATCH" '
   !done && $0 ~ /^ENV NODE_ENV=production$/ {
@@ -171,136 +225,12 @@ TAR_SIZE="$(du -h "$TAR_FILE" | cut -f1)"
 ok "image tar saved: $TAR_FILE (${TAR_SIZE})"
 
 info "writing deployment files to dist/ ..."
+rm -f "$DIST_DIR/docker-compose.yml" "$DIST_DIR/.env" "$DIST_DIR/openclaw.json" "$DIST_DIR/setup.sh"
+rm -rf "$DIST_DIR/tls"
 
-cat > "$DIST_DIR/docker-compose.yml" <<'YAML'
-services:
-  openclaw-gateway:
-    image: ${OPENCLAW_IMAGE:-openclaw:latest}
-    container_name: openclaw-gateway
-    pull_policy: never
-    restart: unless-stopped
-    init: true
-    user: ${OPENCLAW_CONTAINER_USER:-0:0}
-    privileged: true
-    ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
-    environment:
-      HOME: /home/node
-      TERM: xterm-256color
-      TZ: ${OPENCLAW_TZ:-Asia/Shanghai}
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
-      OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
-      ZAI_API_KEY: ${ZAI_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
-      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
-      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
-      CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
-      CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
-    volumes:
-      - ${OPENCLAW_HOST_DIR:-/data/openclaw}:/home/node/.openclaw
-    command:
-      [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--allow-unconfigured",
-        "--bind",
-        "lan",
-        "--port",
-        "18789",
-      ]
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-kfsS",
-          "https://127.0.0.1:18789/healthz",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  openclaw-cli:
-    image: ${OPENCLAW_IMAGE:-openclaw:latest}
-    container_name: openclaw-cli
-    pull_policy: never
-    network_mode: "service:openclaw-gateway"
-    profiles:
-      - cli
-    stdin_open: true
-    tty: true
-    init: true
-    user: ${OPENCLAW_CONTAINER_USER:-0:0}
-    privileged: true
-    environment:
-      HOME: /home/node
-      TERM: xterm-256color
-      TZ: ${OPENCLAW_TZ:-Asia/Shanghai}
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
-      OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
-      BROWSER: echo
-      ZAI_API_KEY: ${ZAI_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
-      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
-      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
-      CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
-      CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
-    volumes:
-      - ${OPENCLAW_HOST_DIR:-/data/openclaw}:/home/node/.openclaw
-    entrypoint: ["node", "dist/index.js"]
-    depends_on:
-      - openclaw-gateway
-YAML
-
-cat > "$DIST_DIR/.env" <<EOF
-# OpenClaw Docker deployment
-OPENCLAW_VERSION=${OPENCLAW_VERSION}
-OPENCLAW_IMAGE=openclaw:${OPENCLAW_VERSION}
-
-# Fixed host mount directory
-OPENCLAW_HOST_DIR=/data/openclaw
-
-# Container runtime user. Root by default so OpenClaw can install packages.
-OPENCLAW_CONTAINER_USER=0:0
-
-# Gateway auth token
-OPENCLAW_GATEWAY_TOKEN=1234567890
-
-# Network ports
-OPENCLAW_GATEWAY_PORT=18789
-OPENCLAW_BRIDGE_PORT=18790
-
-# Timezone
-OPENCLAW_TZ=Asia/Shanghai
-
-# AI provider keys
-# ZAI_API_KEY=
-# OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=sk-ant-...
-# GEMINI_API_KEY=...
-
-# Optional channel tokens
-# TELEGRAM_BOT_TOKEN=
-# DISCORD_BOT_TOKEN=
-# SLACK_BOT_TOKEN=xoxb-...
-
-# Optional advanced settings
-# OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=
-# CLAUDE_AI_SESSION_KEY=
-# CLAUDE_WEB_SESSION_KEY=
-# CLAUDE_WEB_COOKIE=
-EOF
+cp "$TEMPLATE_DIR/docker-compose.yml" "$DIST_DIR/docker-compose.yml"
+render_template "$TEMPLATE_DIR/.env" "$DIST_DIR/.env"
+cp "$TEMPLATE_DIR/openclaw.json" "$DIST_DIR/openclaw.json"
 
 mkdir -p "$DIST_DIR/tls"
 openssl req -x509 -newkey rsa:2048 -nodes \
@@ -310,31 +240,6 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -subj "/CN=openclaw-gateway" \
   >/dev/null 2>&1
 ok "bundled self-signed TLS cert written to dist/tls/"
-
-cat > "$DIST_DIR/openclaw.json" <<'JSONEOF'
-{
-  "gateway": {
-    "controlUi": {
-      "dangerouslyAllowHostHeaderOriginFallback": true
-    },
-    "tls": {
-      "enabled": true,
-      "certPath": "/home/node/.openclaw/tls/cert.pem",
-      "keyPath": "/home/node/.openclaw/tls/key.pem"
-    }
-  },
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "zai/glm-5"
-      },
-      "models": {
-        "zai/glm-5": {}
-      }
-    }
-  }
-}
-JSONEOF
 ok "default openclaw.json written"
 
 cp "$PROJECT_DIR/setup.sh" "$DIST_DIR/setup.sh"

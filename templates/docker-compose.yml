@@ -1,0 +1,66 @@
+services:
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-openclaw:latest}
+    container_name: ${OPENCLAW_GATEWAY_CONTAINER_NAME:-openclaw-gateway}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    user: 0:0
+    privileged: true
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      TZ: ${OPENCLAW_TZ:-Asia/Shanghai}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+    volumes:
+      - ${OPENCLAW_HOST_DIR:-/data/open-claw}:/home/node/.openclaw
+    command:
+      [
+        "node",
+        "dist/index.js",
+        "gateway",
+        "--allow-unconfigured",
+        "--bind",
+        "lan",
+        "--port",
+        "18789",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-kfsS",
+          "https://127.0.0.1:18789/healthz",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  openclaw-cli:
+    image: ${OPENCLAW_IMAGE:-openclaw:latest}
+    container_name: ${OPENCLAW_CLI_CONTAINER_NAME:-openclaw-cli}
+    pull_policy: never
+    network_mode: "service:openclaw-gateway"
+    profiles:
+      - cli
+    stdin_open: true
+    tty: true
+    init: true
+    user: 0:0
+    privileged: true
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      TZ: ${OPENCLAW_TZ:-Asia/Shanghai}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      BROWSER: echo
+    volumes:
+      - ${OPENCLAW_HOST_DIR:-/data/open-claw}:/home/node/.openclaw
+    entrypoint: ["node", "dist/index.js"]
+    depends_on:
+      - openclaw-gateway

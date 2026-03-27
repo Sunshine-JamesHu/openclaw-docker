@@ -22,9 +22,14 @@ ACTION=""
 NEW_VERSION=""
 PAIR_IP=""
 PAIR_REQUEST_ID=""
+EXEC_ARGS=()
 
 compose_cmd() {
-  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+  COMPOSE_PROJECT_NAME="$(compose_project_name)" \
+  OPENCLAW_GATEWAY_CONTAINER_NAME="$(gateway_container_name)" \
+  OPENCLAW_CLI_CONTAINER_NAME="$(cli_container_name)" \
+  OPENCLAW_HOST_DIR="$(host_dir)" \
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
 }
 
 env_get() {
@@ -43,8 +48,51 @@ env_set() {
   fi
 }
 
+project_name() {
+  local name
+  name="$(env_get OPENCLAW_PROJECT_NAME koala)"
+  [[ "$name" =~ ^[a-z]+$ ]] || fail "OPENCLAW_PROJECT_NAME must contain only lowercase English letters"
+  printf '%s\n' "$name"
+}
+
+compose_project_name() {
+  local value
+  value="$(env_get COMPOSE_PROJECT_NAME)"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf 'openclaw-%s\n' "$(project_name)"
+}
+
+gateway_container_name() {
+  local value
+  value="$(env_get OPENCLAW_GATEWAY_CONTAINER_NAME)"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf 'openclaw-gateway-%s\n' "$(project_name)"
+}
+
+cli_container_name() {
+  local value
+  value="$(env_get OPENCLAW_CLI_CONTAINER_NAME)"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf 'openclaw-cli-%s\n' "$(project_name)"
+}
+
 host_dir() {
-  env_get OPENCLAW_HOST_DIR "$(env_get OPENCLAW_HOST_DATA_DIR /data/openclaw)"
+  local value
+  value="$(env_get OPENCLAW_HOST_DIR)"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  printf '/data/open-claw-%s\n' "$(project_name)"
 }
 
 image_ref() {
@@ -56,7 +104,18 @@ gateway_port() {
 }
 
 gateway_token() {
-  env_get OPENCLAW_GATEWAY_TOKEN 1111-1111
+  env_get OPENCLAW_GATEWAY_TOKEN 1234567890
+}
+
+docker_exec_cmd() {
+  local container="$1"
+  shift
+
+  if [[ -t 0 && -t 1 ]]; then
+    docker exec -it "$container" "$@"
+  else
+    docker exec -i "$container" "$@"
+  fi
 }
 
 lan_ip() {
@@ -77,12 +136,21 @@ require_docker() {
 ensure_env_defaults() {
   require_files
 
-  if ! grep -q '^OPENCLAW_HOST_DIR=' "$ENV_FILE" 2>/dev/null; then
-    env_set OPENCLAW_HOST_DIR "$(host_dir)"
+  if [[ -z "$(env_get OPENCLAW_PROJECT_NAME)" ]]; then
+    env_set OPENCLAW_PROJECT_NAME "koala"
+  fi
+
+  project_name >/dev/null
+
+  if [[ -z "$(env_get OPENCLAW_IMAGE)" ]]; then
+    local version
+    version="$(env_get OPENCLAW_VERSION)"
+    [[ -n "$version" ]] || fail "missing OPENCLAW_VERSION in $ENV_FILE"
+    env_set OPENCLAW_IMAGE "openclaw:${version}"
   fi
 
   if [[ -z "$(env_get OPENCLAW_GATEWAY_TOKEN)" ]]; then
-    env_set OPENCLAW_GATEWAY_TOKEN "1111-1111"
+    env_set OPENCLAW_GATEWAY_TOKEN "1234567890"
   fi
 
   if [[ -z "$(env_get OPENCLAW_TZ)" ]]; then
@@ -140,6 +208,15 @@ ensure_image_present() {
     [[ -f "$IMAGE_TAR" ]] || fail "image $ref is missing and $IMAGE_TAR was not found"
     load_image "$IMAGE_TAR" "$ref"
   fi
+}
+
+require_gateway_container_running() {
+  local container
+  container="$(gateway_container_name)"
+
+  docker inspect "$container" >/dev/null 2>&1 || fail "container is not running: $container; run ./setup.sh -s start first"
+  [[ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" == "true" ]] \
+    || fail "container is not running: $container; run ./setup.sh -s start first"
 }
 
 ensure_host_layout() {
@@ -308,6 +385,9 @@ print_access_summary() {
   echo -e "${GREEN}================================================${NC}"
   echo -e "${GREEN}OpenClaw $(env_get OPENCLAW_VERSION) is ready${NC}"
   echo -e "${GREEN}================================================${NC}"
+  echo -e "Project:     $(project_name)"
+  echo -e "Gateway:     $(gateway_container_name)"
+  echo -e "CLI:         $(cli_container_name)"
   echo -e "HTTPS URL:   ${BLUE}https://localhost:${port}/#token=${token}${NC}"
   if [[ -n "$ip" ]]; then
     echo -e "HTTPS URL:   ${BLUE}https://${ip}:${port}/#token=${token}${NC} ${YELLOW}(LAN)${NC}"
@@ -421,6 +501,16 @@ do_pair_approve() {
   ok "approved pairing request: $request_id"
 }
 
+do_exec() {
+  require_docker
+  ensure_env_defaults
+  require_gateway_container_running
+  [[ ${#EXEC_ARGS[@]} -gt 0 ]] || fail "usage: ./setup.sh -s exec -- <command> [args...]"
+
+  info "executing in $(gateway_container_name): ${EXEC_ARGS[*]}"
+  docker_exec_cmd "$(gateway_container_name)" "${EXEC_ARGS[@]}"
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./setup.sh -s <action> [options]
@@ -430,6 +520,7 @@ Actions:
   start         Start OpenClaw
   stop          Stop OpenClaw
   update        Reload openclaw.tar and restart OpenClaw
+  exec          Execute a command inside the running gateway container
   pair-list     Show pending pairing requests and paired devices
   pair-approve  Approve a pending pairing request by IP or request id
 
@@ -438,6 +529,13 @@ Options:
   -i <client-ip>    Client IP for pair-approve
   -r <requestId>    Request id for pair-approve
   -h                Show this help
+
+Environment:
+  OPENCLAW_PROJECT_NAME in .env must be lowercase English letters only.
+
+Examples:
+  ./setup.sh -s exec -- openclaw plugins install @tencent-connect/openclaw-qqbot@latest
+  ./setup.sh -s exec -- bash -lc 'npm config get registry'
 EOF
 }
 
@@ -452,6 +550,12 @@ while getopts "s:v:i:r:h" opt; do
   esac
 done
 
+shift $((OPTIND - 1))
+
+if [[ "$ACTION" == "exec" ]]; then
+  EXEC_ARGS=("$@")
+fi
+
 [[ -n "$ACTION" ]] || { usage; exit 1; }
 
 case "$ACTION" in
@@ -459,6 +563,7 @@ case "$ACTION" in
   start) do_start ;;
   stop) do_stop ;;
   update) do_update ;;
+  exec) do_exec ;;
   pair-list) do_pair_list ;;
   pair-approve) do_pair_approve ;;
   *) fail "unknown action: $ACTION" ;;
