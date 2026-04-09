@@ -9,7 +9,9 @@
       "Bash(unzip:*)",
       "Bash(uuidgen:*)",
       "mcp__chrome-devtools__evaluate_script",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(openssl x509:*)",
+      "Bash(openssl req:*)"
     ]
   }
 }

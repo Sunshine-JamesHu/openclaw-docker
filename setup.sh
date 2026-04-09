@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || ec
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 ENV_FILE="$SCRIPT_DIR/.env"
 IMAGE_TAR="$SCRIPT_DIR/openclaw.tar"
+VERSION_FILE="$SCRIPT_DIR/VERSION"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -29,7 +30,13 @@ compose_cmd() {
   OPENCLAW_GATEWAY_CONTAINER_NAME="$(gateway_container_name)" \
   OPENCLAW_CLI_CONTAINER_NAME="$(cli_container_name)" \
   OPENCLAW_HOST_DIR="$(host_dir)" \
+  OPENCLAW_IMAGE="$(image_ref)" \
     docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+}
+
+version_get() {
+  [[ -f "$VERSION_FILE" ]] || fail "missing VERSION file in $SCRIPT_DIR"
+  tr -d '[:space:]' < "$VERSION_FILE"
 }
 
 env_get() {
@@ -96,7 +103,7 @@ host_dir() {
 }
 
 image_ref() {
-  env_get OPENCLAW_IMAGE openclaw:latest
+  printf 'openclaw:%s\n' "$(version_get)"
 }
 
 gateway_port() {
@@ -141,13 +148,6 @@ ensure_env_defaults() {
   fi
 
   project_name >/dev/null
-
-  if [[ -z "$(env_get OPENCLAW_IMAGE)" ]]; then
-    local version
-    version="$(env_get OPENCLAW_VERSION)"
-    [[ -n "$version" ]] || fail "missing OPENCLAW_VERSION in $ENV_FILE"
-    env_set OPENCLAW_IMAGE "openclaw:${version}"
-  fi
 
   if [[ -z "$(env_get OPENCLAW_GATEWAY_TOKEN)" ]]; then
     env_set OPENCLAW_GATEWAY_TOKEN "1234567890"
@@ -326,13 +326,11 @@ wait_healthy() {
 }
 
 pair_list_json() {
-  compose_cmd --profile cli run --rm -T openclaw-cli devices list --json
+  docker exec -i "$(gateway_container_name)" node dist/index.js devices list --json
 }
 
 parse_pair_list() {
-  local image
-  image="$(image_ref)"
-  docker run --rm -i --entrypoint node "$image" -e '
+  docker exec -i "$(gateway_container_name)" node -e '
 const fs = require("fs");
 const raw = fs.readFileSync(0, "utf8").trim();
 if (!raw) {
@@ -366,14 +364,12 @@ if (paired.length) {
     console.log(`  ${deviceId}  client=${clientId}  platform=${platform}`);
   }
 }
-' 
+'
 }
 
 resolve_request_id_by_ip() {
-  local image ip
-  image="$(image_ref)"
-  ip="$1"
-  docker run --rm -i --entrypoint node "$image" -e '
+  local ip="$1"
+  docker exec -i "$(gateway_container_name)" node -e '
 const fs = require("fs");
 const targetIp = process.argv[1];
 const raw = fs.readFileSync(0, "utf8").trim();
@@ -404,7 +400,7 @@ print_access_summary() {
 
   echo ""
   echo -e "${GREEN}================================================${NC}"
-  echo -e "${GREEN}OpenClaw $(env_get OPENCLAW_VERSION) is ready${NC}"
+  echo -e "${GREEN}OpenClaw $(version_get) is ready${NC}"
   echo -e "${GREEN}================================================${NC}"
   echo -e "Project:     $(project_name)"
   echo -e "Gateway:     $(gateway_container_name)"
@@ -471,21 +467,20 @@ do_update() {
   info "stopping old containers ..."
   compose_cmd down --remove-orphans 2>/dev/null || true
 
+  local previous_version detected_version
+  previous_version="$(version_get)"
+
   if [[ -n "$NEW_VERSION" ]]; then
     load_image "$IMAGE_TAR" "openclaw:${NEW_VERSION}" 1
-    env_set OPENCLAW_VERSION "$NEW_VERSION"
-    env_set OPENCLAW_IMAGE "openclaw:${NEW_VERSION}"
+    detected_version="$NEW_VERSION"
   else
-    local previous_version detected_version
-    previous_version="$(env_get OPENCLAW_VERSION)"
     load_image "$IMAGE_TAR" "$(image_ref)" 1
-    if detected_version="$(image_version_from_ref "$LAST_LOADED_IMAGE_REF" 2>/dev/null)"; then
-      env_set OPENCLAW_VERSION "$detected_version"
-      env_set OPENCLAW_IMAGE "openclaw:${detected_version}"
-      if [[ "$detected_version" != "$previous_version" ]]; then
-        ok "version updated: ${previous_version} -> ${detected_version}"
-      fi
-    fi
+    detected_version="$(image_version_from_ref "$LAST_LOADED_IMAGE_REF" 2>/dev/null)" || detected_version="$previous_version"
+  fi
+
+  if [[ "$detected_version" != "$previous_version" ]]; then
+    printf '%s\n' "$detected_version" > "$VERSION_FILE"
+    ok "version updated: ${previous_version} -> ${detected_version}"
   fi
 
   ensure_host_layout
@@ -502,12 +497,14 @@ do_update() {
 do_pair_list() {
   require_docker
   ensure_env_defaults
+  require_gateway_container_running
   pair_list_json | parse_pair_list
 }
 
 do_pair_approve() {
   require_docker
   ensure_env_defaults
+  require_gateway_container_running
 
   local request_id
   request_id="$PAIR_REQUEST_ID"
@@ -518,7 +515,7 @@ do_pair_approve() {
 
   [[ -n "$request_id" ]] || fail "use -i <client-ip> or -r <requestId>"
 
-  compose_cmd --profile cli run --rm -T openclaw-cli devices approve "$request_id"
+  docker exec -i "$(gateway_container_name)" node dist/index.js devices approve "$request_id"
   ok "approved pairing request: $request_id"
 }
 

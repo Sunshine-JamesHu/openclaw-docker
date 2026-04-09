@@ -17,13 +17,6 @@ ok() { echo -e "${GREEN}[ OK ]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail() { echo -e "${RED}[FAIL]${NC}  $*" >&2; exit 1; }
 
-render_template() {
-  local src="$1" dst="$2"
-  sed \
-    -e "s|__OPENCLAW_VERSION__|${OPENCLAW_VERSION}|g" \
-    "$src" > "$dst"
-}
-
 require_templates() {
   [[ -f "$TEMPLATE_DIR/docker-compose.yml" ]] || fail "missing template: $TEMPLATE_DIR/docker-compose.yml"
   [[ -f "$TEMPLATE_DIR/.env" ]] || fail "missing template: $TEMPLATE_DIR/.env"
@@ -82,14 +75,15 @@ fi
 
 IMAGE_TAG="openclaw:${OPENCLAW_VERSION}"
 TAR_FILE="$DIST_DIR/openclaw.tar"
-SRC_ZIP="$DIST_DIR/openclaw-src-${OPENCLAW_VERSION}.zip"
+CACHE_DIR="$PROJECT_DIR/.cache"
+SRC_ZIP="$CACHE_DIR/openclaw-src-${OPENCLAW_VERSION}.zip"
 
 command -v docker >/dev/null 2>&1 || fail "Docker is not installed"
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running"
 command -v unzip >/dev/null 2>&1 || fail "unzip is not installed"
 command -v openssl >/dev/null 2>&1 || fail "openssl is not installed"
 
-mkdir -p "$DIST_DIR"
+mkdir -p "$DIST_DIR" "$CACHE_DIR"
 require_templates
 
 if [[ ! -f "$SRC_ZIP" ]]; then
@@ -225,12 +219,15 @@ TAR_SIZE="$(du -h "$TAR_FILE" | cut -f1)"
 ok "image tar saved: $TAR_FILE (${TAR_SIZE})"
 
 info "writing deployment files to dist/ ..."
-rm -f "$DIST_DIR/docker-compose.yml" "$DIST_DIR/.env" "$DIST_DIR/openclaw.json" "$DIST_DIR/setup.sh"
+rm -f "$DIST_DIR/docker-compose.yml" "$DIST_DIR/.env" "$DIST_DIR/openclaw.json" "$DIST_DIR/setup.sh" "$DIST_DIR/VERSION"
 rm -rf "$DIST_DIR/tls"
 
 cp "$TEMPLATE_DIR/docker-compose.yml" "$DIST_DIR/docker-compose.yml"
-render_template "$TEMPLATE_DIR/.env" "$DIST_DIR/.env"
+cp "$TEMPLATE_DIR/.env" "$DIST_DIR/.env"
 cp "$TEMPLATE_DIR/openclaw.json" "$DIST_DIR/openclaw.json"
+
+printf '%s\n' "$OPENCLAW_VERSION" > "$DIST_DIR/VERSION"
+ok "VERSION -> $OPENCLAW_VERSION"
 
 mkdir -p "$DIST_DIR/tls"
 openssl req -x509 -newkey rsa:2048 -nodes \
@@ -249,7 +246,7 @@ echo ""
 echo -e "${GREEN}Build complete.${NC}"
 echo "dist/ contains:"
 echo "  openclaw.tar (${TAR_SIZE})"
-echo "  openclaw-src-${OPENCLAW_VERSION}.zip"
+echo "  VERSION (${OPENCLAW_VERSION})"
 echo "  docker-compose.yml"
 echo "  .env"
 echo "  openclaw.json"

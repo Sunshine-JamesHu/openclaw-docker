@@ -14,12 +14,21 @@
 ### 配置文件
 
 - `templates/.env`
-  - 只放编排参数
+  - 只放用户配置（项目名、token、端口、时区）
+  - 不放版本号，版本由 `VERSION` 文件管理
 - `templates/docker-compose.yml`
   - 只放编排和容器运行定义
 - `templates/openclaw.json`
   - 放 OpenClaw 自身配置
   - API Key、渠道 token、模型配置都在这里
+
+### 版本管理
+
+- 版本号写在 `dist/VERSION` 文件中（一行纯文本）
+- `build.sh` 构建时写入
+- `setup.sh` 从 `VERSION` 读取，推导镜像名为 `openclaw:<version>`
+- 升级时 `setup.sh -s update` 自动更新 `VERSION` 文件
+- 用户不需要手动改版本号
 
 ### 项目名规则
 
@@ -49,7 +58,7 @@
 
 `build.sh` 当前会：
 
-1. 下载指定版本源码 zip
+1. 下载指定版本源码 zip（仅构建用，不放入 dist）
 2. 解压到 `.build/`
 3. 基于上游 Dockerfile 打补丁
 4. 先切 Debian `apt` 源到中科大
@@ -58,7 +67,7 @@
 7. 再继续镜像构建
 8. 在运行镜像中预装 `codex`、`gemini`、`claude`
 9. 导出 `dist/openclaw.tar`
-10. 输出 `dist/docker-compose.yml`、`dist/.env`、`dist/openclaw.json`、`dist/tls/`、`dist/setup.sh`
+10. 输出 `dist/VERSION`、`dist/docker-compose.yml`、`dist/.env`、`dist/openclaw.json`、`dist/tls/`、`dist/setup.sh`
 
 说明：
 - 不预装 `qqbot`
@@ -115,7 +124,7 @@
 `build.sh` 生成的 `dist/` 至少包含：
 
 - `openclaw.tar`
-- `openclaw-src-<version>.zip`
+- `VERSION`
 - `docker-compose.yml`
 - `.env`
 - `openclaw.json`
