@@ -40,12 +40,12 @@
 - Compose 项目名：`openclaw-<project>`
 - Gateway 容器名：`openclaw-gateway-<project>`
 - CLI 容器名：`openclaw-cli-<project>`
-- 宿主机目录：`/data/open-claw-<project>`
+- 宿主机目录：`/data/openclaw-<project>`
 
 补充：
-- 通过 `setup.sh` 启动时，实际注入的是 `/data/open-claw-<project>`
-- `templates/docker-compose.yml` 当前保留的静态 fallback 是 `/data/open-claw`
-- 如果用户绕过 `setup.sh` 直接运行 `docker compose`，且没有显式设置 `OPENCLAW_HOST_DIR`，会落到 `/data/open-claw`
+- 通过 `setup.sh` 启动时，实际注入的是 `/data/openclaw-<project>`
+- `templates/docker-compose.yml` 当前保留的静态 fallback 是 `/data/openclaw`
+- 如果用户绕过 `setup.sh` 直接运行 `docker compose`，且没有显式设置 `OPENCLAW_HOST_DIR`，会落到 `/data/openclaw`
 
 ### 容器运行模型
 

@@ -48,19 +48,19 @@
 - Compose 项目名：`openclaw-<project>`
 - Gateway 容器名：`openclaw-gateway-<project>`
 - CLI 容器名：`openclaw-cli-<project>`
-- 宿主机目录：`/data/open-claw-<project>`
+- 宿主机目录：`/data/openclaw-<project>`
 
 例如 `OPENCLAW_PROJECT_NAME=koala` 时：
 - Gateway 容器：`openclaw-gateway-koala`
 - CLI 容器：`openclaw-cli-koala`
-- 宿主机目录：`/data/open-claw-koala`
+- 宿主机目录：`/data/openclaw-koala`
 
 这就是同一台机器部署多个实例的隔离方式。除了项目名以外，还要给每个实例分配不同的端口。
 
 补充说明：
-- 通过 `./setup.sh` 启动时，脚本会实际注入 `/data/open-claw-<project>`
-- 当前 `docker-compose.yml` 自身的静态 fallback 是 `/data/open-claw`
-- 如果你绕过 `setup.sh` 直接执行 `docker compose`，又没有显式设置 `OPENCLAW_HOST_DIR`，就会使用 `/data/open-claw`
+- 通过 `./setup.sh` 启动时，脚本会实际注入 `/data/openclaw-<project>`
+- 当前 `docker-compose.yml` 自身的静态 fallback 是 `/data/openclaw`
+- 如果你绕过 `setup.sh` 直接执行 `docker compose`，又没有显式设置 `OPENCLAW_HOST_DIR`，就会使用 `/data/openclaw`
 
 ## 本地构建
 
@@ -215,8 +215,8 @@ OpenClaw 自身配置放在 `openclaw.json`。
 - `/home/node/.openclaw/tls/key.pem`
 
 包内默认附带的是自签名证书。你也可以直接替换服务器上的：
-- `/data/open-claw-<project>/tls/cert.pem`
-- `/data/open-claw-<project>/tls/key.pem`
+- `/data/openclaw-<project>/tls/cert.pem`
+- `/data/openclaw-<project>/tls/key.pem`
 
 ## 镜像内源配置
 
@@ -232,7 +232,7 @@ OpenClaw 自身配置放在 `openclaw.json`。
 ## 兼容旧布局
 
 如果旧版本把数据放在：
-- `/data/open-claw-<project>/config`
-- `/data/open-claw-<project>/workspace`
+- `/data/openclaw-<project>/config`
+- `/data/openclaw-<project>/workspace`
 
 新的 `setup.sh` 会尝试把 `config/` 下的内容迁移到新的单目录布局中。
