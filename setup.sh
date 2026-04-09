@@ -282,30 +282,65 @@ require_initialized_config() {
 }
 
 fix_permissions() {
-  local dir extensions_dir
+  local dir extensions_dir needs_fix=0
   dir="$(host_dir)"
   extensions_dir="$dir/extensions"
-  info "fixing ownership under $dir ..."
-  sudo chown -R 0:0 "$dir" 2>/dev/null || warn "failed to chown $dir; run sudo chown -R 0:0 $dir"
 
+  # --- ownership: everything should be 0:0 ---
+  local bad_owner
+  bad_owner="$(sudo find "$dir" -not -uid 0 -o -not -gid 0 2>/dev/null | head -1)"
+  if [[ -n "$bad_owner" ]]; then
+    info "fixing ownership under $dir ..."
+    sudo chown -R 0:0 "$dir" 2>/dev/null || warn "failed to chown $dir; run sudo chown -R 0:0 $dir"
+    needs_fix=1
+  fi
+
+  # --- extensions: dirs 0755, files not group/other writable ---
   if sudo test -d "$extensions_dir"; then
-    info "hardening plugin permissions under $extensions_dir ..."
-    sudo find "$extensions_dir" -type d -exec chmod 0755 {} + 2>/dev/null \
-      || warn "failed to chmod plugin directories under $extensions_dir"
-    sudo find "$extensions_dir" -type f -exec chmod go-w {} + 2>/dev/null \
-      || warn "failed to chmod plugin files under $extensions_dir"
+    local bad_ext
+    bad_ext="$(sudo find "$extensions_dir" \( -type d -not -perm 0755 \) -o \( -type f -perm /022 \) 2>/dev/null | head -1)"
+    if [[ -n "$bad_ext" ]]; then
+      info "hardening plugin permissions under $extensions_dir ..."
+      sudo find "$extensions_dir" -type d -exec chmod 0755 {} + 2>/dev/null \
+        || warn "failed to chmod plugin directories under $extensions_dir"
+      sudo find "$extensions_dir" -type f -exec chmod go-w {} + 2>/dev/null \
+        || warn "failed to chmod plugin files under $extensions_dir"
+      needs_fix=1
+    fi
   fi
 
+  # --- openclaw.json: 0644 ---
   if sudo test -f "$dir/openclaw.json"; then
-    sudo chmod 0644 "$dir/openclaw.json" 2>/dev/null || warn "failed to chmod $dir/openclaw.json"
+    local cur_perm
+    cur_perm="$(sudo stat -c '%a' "$dir/openclaw.json" 2>/dev/null)"
+    if [[ "$cur_perm" != "644" ]]; then
+      sudo chmod 0644 "$dir/openclaw.json" 2>/dev/null || warn "failed to chmod $dir/openclaw.json"
+      needs_fix=1
+    fi
   fi
 
+  # --- cert.pem: 0644 ---
   if sudo test -f "$dir/tls/cert.pem"; then
-    sudo chmod 0644 "$dir/tls/cert.pem" 2>/dev/null || warn "failed to chmod $dir/tls/cert.pem"
+    local cur_perm
+    cur_perm="$(sudo stat -c '%a' "$dir/tls/cert.pem" 2>/dev/null)"
+    if [[ "$cur_perm" != "644" ]]; then
+      sudo chmod 0644 "$dir/tls/cert.pem" 2>/dev/null || warn "failed to chmod $dir/tls/cert.pem"
+      needs_fix=1
+    fi
   fi
 
+  # --- key.pem: 0600 ---
   if sudo test -f "$dir/tls/key.pem"; then
-    sudo chmod 0600 "$dir/tls/key.pem" 2>/dev/null || warn "failed to chmod $dir/tls/key.pem"
+    local cur_perm
+    cur_perm="$(sudo stat -c '%a' "$dir/tls/key.pem" 2>/dev/null)"
+    if [[ "$cur_perm" != "600" ]]; then
+      sudo chmod 0600 "$dir/tls/key.pem" 2>/dev/null || warn "failed to chmod $dir/tls/key.pem"
+      needs_fix=1
+    fi
+  fi
+
+  if [[ "$needs_fix" == "0" ]]; then
+    ok "permissions OK"
   fi
 }
 
