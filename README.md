@@ -66,7 +66,6 @@
 
 ```bash
 ./build.sh
-./build.sh -v 2026.3.24
 ```
 
 `build.sh` 会做这些事：
@@ -123,7 +122,9 @@ cd /opt/openclaw
 - `stop`
   - 停止并删除容器
 - `update`
-  - 重新加载 `openclaw.tar`
+  - 读取 `VERSION` 确定目标镜像
+  - 如果镜像已存在则跳过加载，不存在则从 `openclaw.tar` 加载
+  - 加载后验证镜像是否可用
   - 重启容器
   - 不改写 `openclaw.json`
 - `exec`

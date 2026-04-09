@@ -20,7 +20,7 @@ fail() { echo -e "${RED}[FAIL]${NC}  $*" >&2; exit 1; }
 
 LAST_LOADED_IMAGE_REF=""
 ACTION=""
-NEW_VERSION=""
+
 PAIR_IP=""
 PAIR_REQUEST_ID=""
 EXEC_ARGS=()
@@ -464,24 +464,20 @@ do_update() {
   ensure_env_defaults
   [[ -f "$IMAGE_TAR" ]] || fail "image tar not found: $IMAGE_TAR"
 
+  local target_image
+  target_image="$(image_ref)"
+
+  if docker image inspect "$target_image" >/dev/null 2>&1; then
+    ok "image already present: $target_image"
+  else
+    info "image $target_image not found locally, loading from tar ..."
+    load_image "$IMAGE_TAR" "$target_image" 1
+    docker image inspect "$target_image" >/dev/null 2>&1 \
+      || fail "image $target_image still not found after loading tar; check that openclaw.tar matches VERSION ($target_image)"
+  fi
+
   info "stopping old containers ..."
   compose_cmd down --remove-orphans 2>/dev/null || true
-
-  local previous_version detected_version
-  previous_version="$(version_get)"
-
-  if [[ -n "$NEW_VERSION" ]]; then
-    load_image "$IMAGE_TAR" "openclaw:${NEW_VERSION}" 1
-    detected_version="$NEW_VERSION"
-  else
-    load_image "$IMAGE_TAR" "$(image_ref)" 1
-    detected_version="$(image_version_from_ref "$LAST_LOADED_IMAGE_REF" 2>/dev/null)" || detected_version="$previous_version"
-  fi
-
-  if [[ "$detected_version" != "$previous_version" ]]; then
-    printf '%s\n' "$detected_version" > "$VERSION_FILE"
-    ok "version updated: ${previous_version} -> ${detected_version}"
-  fi
 
   ensure_host_layout
   migrate_legacy_layout
@@ -537,13 +533,12 @@ Actions:
   install       Load the image tar, seed config/TLS into the fixed host dir, and start OpenClaw
   start         Start OpenClaw
   stop          Stop OpenClaw
-  update        Reload openclaw.tar and restart OpenClaw
+  update        Reload openclaw.tar and restart OpenClaw (version auto-detected)
   exec          Execute a command inside the running gateway container
   pair-list     Show pending pairing requests and paired devices
   pair-approve  Approve a pending pairing request by IP or request id
 
 Options:
-  -v <version>      Target version for update
   -i <client-ip>    Client IP for pair-approve
   -r <requestId>    Request id for pair-approve
   -h                Show this help
@@ -557,10 +552,9 @@ Examples:
 EOF
 }
 
-while getopts "s:v:i:r:h" opt; do
+while getopts "s:i:r:h" opt; do
   case "$opt" in
     s) ACTION="$OPTARG" ;;
-    v) NEW_VERSION="$OPTARG" ;;
     i) PAIR_IP="$OPTARG" ;;
     r) PAIR_REQUEST_ID="$OPTARG" ;;
     h) usage; exit 0 ;;

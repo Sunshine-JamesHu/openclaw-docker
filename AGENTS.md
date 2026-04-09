@@ -43,7 +43,7 @@
 - `install` 完成后，不要再自动改写宿主机上的 `openclaw.json`
 - `start` 只做启动，不做复杂向导，也不改写 `openclaw.json`
 - `stop` 默认删除容器，不保留容器系统层里的临时安装内容
-- `update` 只做重新加载 tar 和重启，也不改写 `openclaw.json`
+- `update` 根据 `VERSION` 文件确定目标镜像，本地已有则跳过 load，不存在则从 tar 加载，不需要传版本号
 - 设备配对由 `pair-list` / `pair-approve` 处理
 - 默认让 OpenClaw 以 root + `privileged: true` 运行，避免容器内安装类命令直接被权限拦住
 - 默认模型是 `zai/glm-4.7`

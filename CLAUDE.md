@@ -27,8 +27,8 @@
 - 版本号写在 `dist/VERSION` 文件中（一行纯文本）
 - `build.sh` 构建时写入
 - `setup.sh` 从 `VERSION` 读取，推导镜像名为 `openclaw:<version>`
-- 升级时 `setup.sh -s update` 自动更新 `VERSION` 文件
-- 用户不需要手动改版本号
+- `update` 先检查该镜像是否已存在，已有则跳过 load，不存在则从 tar 加载
+- 用户不需要手动传版本号
 
 ### 项目名规则
 
@@ -94,7 +94,7 @@
 - `install` 完成后不再自动改写宿主机 `openclaw.json`
 - `start` 只做启动
 - `stop` 默认删除容器
-- `update` 只做重新加载 tar 和重启
+- `update` 根据 `VERSION` 确定目标镜像，本地已有则跳过 load，不存在则从 tar 加载并重启
 - `exec` 用于在宿主机侧转发命令到运行中的 Gateway 容器
 - 配对只由 `pair-list` / `pair-approve` 处理
 
