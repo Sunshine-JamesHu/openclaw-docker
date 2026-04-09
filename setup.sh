@@ -497,7 +497,6 @@ do_stop() {
 do_update() {
   require_docker
   ensure_env_defaults
-  [[ -f "$IMAGE_TAR" ]] || fail "image tar not found: $IMAGE_TAR"
 
   local target_image
   target_image="$(image_ref)"
@@ -505,6 +504,7 @@ do_update() {
   if docker image inspect "$target_image" >/dev/null 2>&1; then
     ok "image already present: $target_image"
   else
+    [[ -f "$IMAGE_TAR" ]] || fail "image $target_image not found locally and openclaw.tar is missing: $IMAGE_TAR"
     info "image $target_image not found locally, loading from tar ..."
     load_image "$IMAGE_TAR" "$target_image" 1
     docker image inspect "$target_image" >/dev/null 2>&1 \
