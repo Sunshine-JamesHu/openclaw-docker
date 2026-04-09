@@ -47,7 +47,7 @@ latest_tag() {
     | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
 
   if [[ -z "$tag" ]]; then
-    warn "GitHub API did not return a tag. Falling back to releases/latest ..."
+    warn "GitHub API did not return a tag. Falling back to releases/latest ..." >&2
     tag="$(curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/openclaw/openclaw/releases/latest" 2>/dev/null \
       | sed -n 's#.*/tag/\(v[^/[:space:]]*\)$#\1#p' | tail -1 || true)"
   fi
