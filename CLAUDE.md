@@ -65,9 +65,10 @@
 5. 再切 npm 源到 `npmmirror`
 6. 再升级到最新 npm
 7. 再继续镜像构建
-8. 在运行镜像中预装 `codex`、`gemini`、`claude`
-9. 导出 `dist/openclaw.tar`
-10. 输出 `dist/VERSION`、`dist/docker-compose.yml`、`dist/.env`、`dist/openclaw.json`、`dist/tls/`、`dist/setup.sh`
+8. 在运行镜像中预装 `codex`、`gemini`、`claude`、`mihomo`
+9. 提供 `clash -> mihomo` 软链
+10. 导出 `dist/openclaw.tar`
+11. 输出 `dist/VERSION`、`dist/docker-compose.yml`、`dist/.env`、`dist/openclaw.json`、`dist/tls/`、`dist/setup.sh`
 
 说明：
 - 不预装 `qqbot`

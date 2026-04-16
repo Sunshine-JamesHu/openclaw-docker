@@ -286,30 +286,18 @@ fix_permissions() {
   dir="$(host_dir)"
   extensions_dir="$dir/extensions"
 
-  # --- ownership: everything should be 0:0 ---
-  local bad_owner
-  bad_owner="$(sudo find "$dir" -not -uid 0 -o -not -gid 0 2>/dev/null | head -1)"
-  if [[ -n "$bad_owner" ]]; then
-    info "fixing ownership under $dir ..."
-    sudo chown -R 0:0 "$dir" 2>/dev/null || warn "failed to chown $dir; run sudo chown -R 0:0 $dir"
-    needs_fix=1
-  fi
-
-  # --- extensions: dirs 0755, files not group/other writable ---
-  if sudo test -d "$extensions_dir"; then
-    local bad_ext
-    bad_ext="$(sudo find "$extensions_dir" \( -type d -not -perm 0755 \) -o \( -type f -perm /022 \) 2>/dev/null | head -1)"
-    if [[ -n "$bad_ext" ]]; then
-      info "hardening plugin permissions under $extensions_dir ..."
-      sudo find "$extensions_dir" -type d -exec chmod 0755 {} + 2>/dev/null \
-        || warn "failed to chmod plugin directories under $extensions_dir"
-      sudo find "$extensions_dir" -type f -exec chmod go-w {} + 2>/dev/null \
-        || warn "failed to chmod plugin files under $extensions_dir"
+  # Keep permission checks bounded. Scanning/chowning the entire host dir can
+  # stall updates when workspace/ contains many files.
+  if sudo test -f "$dir/openclaw.json"; then
+    local cur_owner
+    cur_owner="$(sudo stat -c '%u:%g' "$dir/openclaw.json" 2>/dev/null)"
+    if [[ "$cur_owner" != "0:0" ]]; then
+      info "fixing ownership for $dir/openclaw.json ..."
+      sudo chown 0:0 "$dir/openclaw.json" 2>/dev/null || warn "failed to chown $dir/openclaw.json"
       needs_fix=1
     fi
   fi
 
-  # --- openclaw.json: 0644 ---
   if sudo test -f "$dir/openclaw.json"; then
     local cur_perm
     cur_perm="$(sudo stat -c '%a' "$dir/openclaw.json" 2>/dev/null)"
@@ -321,6 +309,14 @@ fix_permissions() {
 
   # --- cert.pem: 0644 ---
   if sudo test -f "$dir/tls/cert.pem"; then
+    local cur_owner
+    cur_owner="$(sudo stat -c '%u:%g' "$dir/tls/cert.pem" 2>/dev/null)"
+    if [[ "$cur_owner" != "0:0" ]]; then
+      info "fixing ownership for $dir/tls/cert.pem ..."
+      sudo chown 0:0 "$dir/tls/cert.pem" 2>/dev/null || warn "failed to chown $dir/tls/cert.pem"
+      needs_fix=1
+    fi
+
     local cur_perm
     cur_perm="$(sudo stat -c '%a' "$dir/tls/cert.pem" 2>/dev/null)"
     if [[ "$cur_perm" != "644" ]]; then
@@ -331,6 +327,14 @@ fix_permissions() {
 
   # --- key.pem: 0600 ---
   if sudo test -f "$dir/tls/key.pem"; then
+    local cur_owner
+    cur_owner="$(sudo stat -c '%u:%g' "$dir/tls/key.pem" 2>/dev/null)"
+    if [[ "$cur_owner" != "0:0" ]]; then
+      info "fixing ownership for $dir/tls/key.pem ..."
+      sudo chown 0:0 "$dir/tls/key.pem" 2>/dev/null || warn "failed to chown $dir/tls/key.pem"
+      needs_fix=1
+    fi
+
     local cur_perm
     cur_perm="$(sudo stat -c '%a' "$dir/tls/key.pem" 2>/dev/null)"
     if [[ "$cur_perm" != "600" ]]; then
@@ -339,9 +343,33 @@ fix_permissions() {
     fi
   fi
 
+  # --- extensions: dirs 0755, files root-owned and not group/other writable ---
+  if sudo test -d "$extensions_dir"; then
+    local bad_ext
+    bad_ext="$(sudo find "$extensions_dir" \
+      \( -type d -not -perm 0755 \) -o \
+      \( -type f -perm /022 \) -o \
+      \( -not -uid 0 \) -o \
+      \( -not -gid 0 \) \
+      -print -quit 2>/dev/null || true)"
+    if [[ -n "$bad_ext" ]]; then
+      info "hardening plugin permissions under $extensions_dir ..."
+      sudo chown -R 0:0 "$extensions_dir" 2>/dev/null || warn "failed to chown $extensions_dir"
+      sudo find "$extensions_dir" -type d -exec chmod 0755 {} + 2>/dev/null \
+        || warn "failed to chmod plugin directories under $extensions_dir"
+      sudo find "$extensions_dir" -type f -exec chmod go-w {} + 2>/dev/null \
+        || warn "failed to chmod plugin files under $extensions_dir"
+      needs_fix=1
+    fi
+  fi
+
   if [[ "$needs_fix" == "0" ]]; then
     ok "permissions OK"
+  else
+    ok "permissions fixed"
   fi
+
+  return 0
 }
 
 wait_healthy() {
@@ -461,8 +489,11 @@ do_install() {
 
   load_image "$IMAGE_TAR" "$(image_ref)"
   ensure_host_layout
+  info "checking host layout ..."
   migrate_legacy_layout
+  info "seeding default config ..."
   seed_defaults
+  info "checking permissions ..."
   fix_permissions
 
   info "starting gateway ..."
@@ -476,8 +507,11 @@ do_start() {
   ensure_env_defaults
   ensure_image_present
   ensure_host_layout
+  info "checking host layout ..."
   migrate_legacy_layout
+  info "checking config files ..."
   require_initialized_config
+  info "checking permissions ..."
   fix_permissions
 
   info "starting gateway ..."
@@ -515,8 +549,11 @@ do_update() {
   compose_cmd down --remove-orphans 2>/dev/null || true
 
   ensure_host_layout
+  info "checking host layout ..."
   migrate_legacy_layout
+  info "checking config files ..."
   require_initialized_config
+  info "checking permissions ..."
   fix_permissions
 
   info "starting updated gateway ..."

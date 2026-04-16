@@ -37,6 +37,7 @@
 - 容器固定以 `0:0` 运行
 - Gateway 和 CLI 默认启用 `privileged: true`
 - 运行镜像默认预装 `codex`、`gemini`、`claude`
+- 运行镜像默认预装 `mihomo`，并提供 `clash` 软链
 - `.env` 只放编排参数
 - OpenClaw 自身的密钥、渠道 token 放在 `openclaw.json` 的 `env` 里
 
@@ -78,9 +79,10 @@
 6. 再升级到最新 npm
 7. 再继续执行后续构建和全局 CLI 安装
 8. 运行镜像默认预装 `codex`、`gemini`、`claude`
-9. 导出 `dist/openclaw.tar`
-10. 将 `templates/` 渲染/复制到 `dist/`
-11. 生成自签名证书到 `dist/tls/`
+9. 运行镜像默认预装 `mihomo`（同时提供 `clash` 命令别名）
+10. 导出 `dist/openclaw.tar`
+11. 将 `templates/` 渲染/复制到 `dist/`
+12. 生成自签名证书到 `dist/tls/`
 
 说明：
 - 现在不再预装 `qqbot`
@@ -228,6 +230,9 @@ OpenClaw 自身配置放在 `openclaw.json`。
 - npm 源切到淘宝镜像
   - `https://registry.npmmirror.com/`
 - npm 升级到最新版本
+- 默认安装最新 stable `mihomo`
+- 默认提供 `clash -> /usr/local/bin/mihomo` 软链
+- 当前仅支持在 `amd64` 运行镜像中安装 `mihomo`
 
 ## 兼容旧布局
 
