@@ -30,8 +30,6 @@ trap cleanup EXIT
 
 OPENCLAW_VERSION=""
 RAW_TAG=""
-MIHOMO_VERSION=""
-MIHOMO_ASSET=""
 
 usage() {
   cat <<'EOF'
@@ -58,21 +56,6 @@ latest_release_tag() {
   printf '%s\n' "$tag"
 }
 
-resolve_release_asset_name() {
-  local repo="$1" tag="$2" label="$3" asset url
-  shift 3
-
-  for asset in "$@"; do
-    url="https://github.com/${repo}/releases/download/${tag}/${asset}"
-    if curl -fsI "$url" >/dev/null 2>&1; then
-      printf '%s\n' "$asset"
-      return 0
-    fi
-  done
-
-  fail "unable to resolve a supported asset for ${label} ${tag}"
-}
-
 while getopts "v:h" opt; do
   case "$opt" in
     v) OPENCLAW_VERSION="$OPTARG" ;;
@@ -89,17 +72,6 @@ if [[ -z "$OPENCLAW_VERSION" ]]; then
 else
   RAW_TAG="v${OPENCLAW_VERSION}"
 fi
-
-MIHOMO_VERSION="$(latest_release_tag "MetaCubeX/mihomo" "mihomo")"
-ok "mihomo version: ${MIHOMO_VERSION}"
-MIHOMO_ASSET="$(resolve_release_asset_name \
-  "MetaCubeX/mihomo" \
-  "$MIHOMO_VERSION" \
-  "mihomo" \
-  "mihomo-linux-amd64-${MIHOMO_VERSION}.gz" \
-  "mihomo-linux-amd64-v1-${MIHOMO_VERSION}.gz"
-)"
-ok "mihomo asset: ${MIHOMO_ASSET}"
 
 IMAGE_TAG="openclaw:${OPENCLAW_VERSION}"
 TAR_FILE="$DIST_DIR/openclaw.tar"
@@ -178,18 +150,6 @@ RUN npm install -g @openai/codex @google/gemini-cli @anthropic-ai/claude-code &&
 EOF
 )"
 
-MIHOMO_INSTALL_PATCH="$(cat <<EOF
-RUN set -eux; \\
-    if [ "\$(dpkg --print-architecture)" != "amd64" ]; then echo "unsupported architecture for mihomo: \$(dpkg --print-architecture) (expected amd64)" >&2; exit 1; fi; \\
-    curl -fsSL "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/${MIHOMO_ASSET}" -o /tmp/mihomo.gz; \\
-    gzip -dc /tmp/mihomo.gz > /usr/local/bin/mihomo; \\
-    chmod 0755 /usr/local/bin/mihomo; \\
-    ln -sf /usr/local/bin/mihomo /usr/local/bin/clash; \\
-    rm -f /tmp/mihomo.gz; \\
-    /usr/local/bin/mihomo -v >/dev/null
-EOF
-)"
-
 NPM_MIRROR_PATCH="$(cat <<'EOF'
 ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
 RUN npm config --location=global set registry "$NPM_CONFIG_REGISTRY" && \
@@ -243,22 +203,6 @@ awk -v patch="$DEFAULT_AGENT_CLI_PATCH" '
     }
   }
 ' "$DOCKERFILE" > "$DOCKERFILE_TMP" || fail "failed to patch Dockerfile with default agent CLIs"
-mv "$DOCKERFILE_TMP" "$DOCKERFILE"
-
-DOCKERFILE_TMP="$DOCKERFILE.tmp"
-awk -v patch="$MIHOMO_INSTALL_PATCH" '
-  !done && $0 ~ /^ENV NODE_ENV=production$/ {
-    print patch
-    print ""
-    done=1
-  }
-  { print }
-  END {
-    if (!done) {
-      exit 1
-    }
-  }
-' "$DOCKERFILE" > "$DOCKERFILE_TMP" || fail "failed to patch Dockerfile with mihomo"
 mv "$DOCKERFILE_TMP" "$DOCKERFILE"
 
 info "building image ${IMAGE_TAG} ..."
